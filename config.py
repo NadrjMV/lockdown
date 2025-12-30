@@ -13,18 +13,18 @@ ZMPASS          = "sunshield1414"
 ZM_ADDR         = "192.168.1.39"
 DEEPSTACK_ADDR  = "localhost:5001"
 
+# Diretorios no novo volume
 OUTPUT_DIR      = "/media/srv-sunshield/NovoVolume/Script_imagens"
-ZM_CACHE_DIR    = "/media/srv-sunshield/NovoVolume/Events_ZM" # Onde estao os eventos
-ZM_LOGS_DIR     = "/media/srv-sunshield/NovoVolume/Logs_ZM"   # Onde estao os logs do ZM
-PROCESSED_FILE  = os.path.join(OUTPUT_DIR, "processed_events.txt")
+ZM_CACHE_DIR    = "/media/srv-sunshield/NovoVolume/Events_ZM" 
+ZM_LOGS_DIR     = "/media/srv-sunshield/NovoVolume/Logs_ZM"   
 
-# Arquivo para o dashboard de monitoramento no lockdown
+PROCESSED_FILE  = os.path.join(OUTPUT_DIR, "processed_events.txt")
 IA_MONITORING_FILE = "/var/www/html/ia_monitoring_cameras.json"
 
 CLEANUP_RETENTION_DAYS   = 1
 CLEANUP_INTERVAL_MINUTES = 60
+MAX_EVENT_AGE_MINUTES    = 5 # Ignora eventos com mais de 5 minutos para garantir tempo real
 
-# Configura o log pra salvar no arquivo dentro do novo volume e mostrar no console
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",

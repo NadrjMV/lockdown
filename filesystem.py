@@ -14,7 +14,7 @@ def ensure_event_folder(camera_id, event_id):
     return event_folder
 
 def get_event_frames(event_id, camera_id, event_date):
-    # Agora monta o caminho usando o novo volume sem a subpasta redundante 'events'
+    # Monta o caminho usando o novo volume: /media/srv-sunshield/NovoVolume/Events_ZM/ID/DATA/EVENTO
     base = os.path.join(
         ZM_CACHE_DIR,
         str(camera_id),

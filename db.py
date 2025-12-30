@@ -42,11 +42,24 @@ def get_latest_event(zmmoid):
         if conn:
             conn.close()
 
+def get_event_data(event_id):
+    """Retorna o StartDateTime real do evento do banco de dados para a IA."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT StartDateTime FROM Events WHERE Id = %s", (event_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        return row['StartDateTime'] if row else None
+    except Exception:
+        logging.exception(f"Erro ao buscar data do evento {event_id}")
+        return None
+    finally:
+        if conn: conn.close()
+
 def get_camera_groups(camera_id):
-    """
-    Retorna uma lista de IDs (inteiros) de todos os grupos aos quais
-    a câmera 'camera_id' pertence. Se falhar, retorna lista vazia.
-    """
+    """Retorna IDs dos grupos da câmera."""
     conn = None
     try:
         conn   = get_db_connection()
@@ -57,43 +70,30 @@ def get_camera_groups(camera_id):
               JOIN Groups_Monitors AS gm ON gm.groupId = g.Id
              WHERE gm.monitorId = %s
         """, (camera_id,))
-        # extrai apenas o primeiro campo de cada linha (o próprio Id)
         groups = [row[0] for row in cursor.fetchall()]
         cursor.close()
         return groups
     except Exception:
-        logging.exception(f"get_camera_groups: não foi possível buscar grupos para câmera {camera_id}")
+        logging.exception(f"get_camera_groups: falha para câmera {camera_id}")
         return []
     finally:
         if conn:
             conn.close()
 
 def get_active_monitor_ids():
-    """
-    Retorna apenas os IDs das câmeras que estão ATIVAS no ZM.
-    Filtra câmeras deletadas ou desativadas (Function != 'None').
-    """
+    """Retorna IDs das câmeras ATIVAS (Function != 'None'). Resolve o erro de câmeras deletadas."""
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Só filtra quem tem função definida (Monitor, Modect, etc)
-        cursor.execute("""
-            SELECT Id
-            FROM Monitors
-            WHERE Function != 'None'
-            ORDER BY Id ASC
-        """)
-        
+        cursor.execute("SELECT Id FROM Monitors WHERE Function != 'None' ORDER BY Id ASC")
         monitors = [row[0] for row in cursor.fetchall()]
         cursor.close()
         conn.close()
         logging.info(f"Câmeras ativas carregadas do DB: {monitors}")
         return monitors
-    
     except Exception:
-        logging.exception("get_active_monitor_ids: falha ao buscar monitores ativos do DB.")
+        logging.exception("get_active_monitor_ids: falha ao buscar monitores.")
         return []
     finally:
         if conn:
