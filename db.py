@@ -43,7 +43,7 @@ def get_latest_event(zmmoid):
             conn.close()
 
 def get_event_data(event_id):
-    """Retorna o StartDateTime real do evento do banco de dados para a IA."""
+    """Retorna o StartDateTime real do evento para validacao de tempo real."""
     conn = None
     try:
         conn = get_db_connection()
@@ -59,7 +59,7 @@ def get_event_data(event_id):
         if conn: conn.close()
 
 def get_camera_groups(camera_id):
-    """Retorna IDs dos grupos da câmera."""
+    """Retorna uma lista de IDs de todos os grupos da camera."""
     conn = None
     try:
         conn   = get_db_connection()
@@ -81,7 +81,7 @@ def get_camera_groups(camera_id):
             conn.close()
 
 def get_active_monitor_ids():
-    """Retorna IDs das câmeras ATIVAS (Function != 'None'). Resolve o erro de câmeras deletadas."""
+    """Retorna IDs das câmeras ATIVAS filtrando quem foi deletado (Function != 'None')."""
     conn = None
     try:
         conn = get_db_connection()
@@ -93,7 +93,7 @@ def get_active_monitor_ids():
         logging.info(f"Câmeras ativas carregadas do DB: {monitors}")
         return monitors
     except Exception:
-        logging.exception("get_active_monitor_ids: falha ao buscar monitores.")
+        logging.exception("get_active_monitor_ids: falha ao buscar monitores ativos do DB.")
         return []
     finally:
         if conn:

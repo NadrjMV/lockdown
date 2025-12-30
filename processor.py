@@ -30,7 +30,7 @@ def save_processed(processed):
 def process_event(camera_id, event_date, event_id, processed_events, event_time=None):
     global last_log_content
 
-    # Horário Real do ZM para o log e pasta
+    # Usa o horario real do ZM para o log e a organizacao de pastas
     real_time_str = event_time.strftime("%H:%M:%S") if event_time else time.strftime("%H:%M:%S")
     real_date_str = event_time.strftime("%d-%m-%Y") if event_time else time.strftime("%d-%m-%Y")
 
@@ -78,7 +78,7 @@ def process_event(camera_id, event_date, event_id, processed_events, event_time=
         "evento":             event_id,
         "frames_analisados":  len(sampled),
         "grupo":              group_ids,
-        "resultado":          f"{count} detecções em {len(sampled)} frames.",
+        "resultado":          f"{count} detecções in {len(sampled)} frames.",
         "objetos_detectados": objects
     }
 
@@ -86,13 +86,14 @@ def process_event(camera_id, event_date, event_id, processed_events, event_time=
     if text == last_log_content: return
 
     group_str = "-".join(map(str, group_ids))
-    filename = f"detections_log__ID_{camera_id}__{event_id}__{group_str}__{real_time_str.replace(':', '-')}.json"
+    safe_time = real_time_str.replace(':', '-')
+    filename = f"detections_log__ID_{camera_id}__{event_id}__{group_str}__{safe_time}.json"
     path = os.path.join(camera_folder, filename)
 
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
-        logging.info(f"✅ Evento {event_id} processado (Hora Real: {real_time_str})")
+        logging.info(f"✅ Evento {event_id} processado (Hora: {real_time_str})")
         last_log_content = text
     except Exception:
         logging.exception(f"Erro ao salvar log: {path}")
