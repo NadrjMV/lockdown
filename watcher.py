@@ -69,7 +69,7 @@ class NewEventHandler(FileSystemEventHandler):
 def start_daemon_watch():
     ZMMOIDS = get_active_monitor_ids()
     processed = load_processed()
-    base = ZM_CACHE_DIR 
+    base = ZM_CACHE_DIR
 
     observer = Observer()
     handler  = NewEventHandler(processed, base, ZMMOIDS)
