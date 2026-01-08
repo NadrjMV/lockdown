@@ -3,13 +3,15 @@ import time
 import json
 import logging
 import shutil
-from config import OUTPUT_DIR, PROCESSED_FILE
+from config import OUTPUT_DIR, LOGS_GERAIS_DIR, PROCESSED_FILE, IA_ALERTS_FILE
 from filesystem import get_event_frames, ensure_event_folder
 from deepstack import analyze_with_deepstack
 from db import get_camera_groups
 import stats
 
 last_log_content = None
+alert_cooldowns = {}
+COOLDOWN_SECONDS = 300 
 
 def load_processed():
     s = set()
@@ -27,13 +29,20 @@ def save_processed(processed):
         for cam, evt in processed:
             f.write(f"{cam}|{evt}\n")
 
-def process_event(camera_id, event_date, event_id, processed_events, event_time=None):
-    global last_log_content
+def update_alert_stream(new_alert):
+    alerts = []
+    if os.path.exists(IA_ALERTS_FILE):
+        try:
+            with open(IA_ALERTS_FILE, 'r', encoding='utf-8') as f:
+                alerts = json.load(f)
+        except: alerts = []
+    alerts.insert(0, new_alert)
+    alerts = alerts[:20]
+    with open(IA_ALERTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(alerts, f, indent=4)
 
-    # Usa o horario real do ZM para o log e a organizacao de pastas
-    real_time_str = event_time.strftime("%H:%M:%S") if event_time else time.strftime("%H:%M:%S")
-    real_date_str = event_time.strftime("%d-%m-%Y") if event_time else time.strftime("%d-%m-%Y")
-
+def process_event(camera_id, event_date, event_id, processed_events):
+    global last_log_content, alert_cooldowns
     key = (str(camera_id), str(event_id))
     if key in processed_events: return
 
@@ -44,56 +53,72 @@ def process_event(camera_id, event_date, event_id, processed_events, event_time=
         return
 
     sampled = frames[::7]
-    count, objects = 0, []
-    event_folder = ensure_event_folder(camera_id, event_id)
+    count = 0
+    objects = []
     
-    if not os.path.exists(event_folder): return
+    # --- Pasta de análise agora fora da estrutura de data pra dar pra enxergar ---
+    work_base = os.path.join(LOGS_GERAIS_DIR, "Analise_Temporaria")
+    work_dir = os.path.join(work_base, f"{camera_id}_{event_id}")
+    os.makedirs(work_dir, exist_ok=True) # Cria a Analise_Temporaria se não existir
 
     for frame in sampled:
-        if not os.path.exists(event_folder): break
-        detected, objs = analyze_with_deepstack(frame, camera_id, event_folder)
+        detected, objs = analyze_with_deepstack(frame, camera_id, work_dir)
         if detected:
             count += 1
             objects.extend(objs)
 
     if count < 3:
-        if os.path.exists(event_folder): 
-            shutil.rmtree(event_folder, ignore_errors=True)
+        shutil.rmtree(work_dir, ignore_errors=True)
         processed_events.add(key)
         save_processed(processed_events)
         return
+
+    # Lógica de Cooldown
+    current_time = time.time()
+    primary_label = objects[0].split(' ')[0] if objects else "person"
+    alert_key = f"{camera_id}_{primary_label}"
+    is_critical = (current_time - alert_cooldowns.get(alert_key, 0)) > COOLDOWN_SECONDS
+    
+    if is_critical:
+        alert_cooldowns[alert_key] = current_time
 
     processed_events.add(key)
     save_processed(processed_events)
     stats.increment_with_detections(event_date)
 
-    group_ids = get_camera_groups(camera_id) or ["NENHUM"]
-    daily = os.path.join(OUTPUT_DIR, real_date_str)
-    camera_folder = os.path.join(daily, f"ID_{camera_id}")
-    os.makedirs(camera_folder, mode=0o775, exist_ok=True)
-
+    # Dados do Log
+    date_str = time.strftime("%d-%m-%Y")
+    time_str = time.strftime("%H:%M:%S")
     log_data = {
-        "data_execucao":      f"{real_date_str} {real_time_str}",
-        "camera":             camera_id,
-        "evento":             event_id,
-        "frames_analisados":  len(sampled),
-        "grupo":              group_ids,
-        "resultado":          f"{count} detecções in {len(sampled)} frames.",
-        "objetos_detectados": objects
+        "data_execucao": f"{date_str} {time_str}",
+        "camera": camera_id,
+        "evento": event_id,
+        "is_critical": is_critical,
+        "resultado": f"{count} detecções.",
+        "objetos_detectados": list(set(objects))
     }
 
-    text = json.dumps(log_data, indent=4)
-    if text == last_log_content: return
+    # --- SALVAMENTO ---
+    # 1. Salva o JSON no histórico (Logs_Gerais_IA/DATA/ID_CAM)
+    geral_path = os.path.join(LOGS_GERAIS_DIR, date_str, f"ID_{camera_id}")
+    os.makedirs(geral_path, exist_ok=True)
+    with open(os.path.join(geral_path, f"log_{event_id}.json"), "w") as f:
+        json.dump(log_data, f, indent=4)
 
-    group_str = "-".join(map(str, group_ids))
-    safe_time = real_time_str.replace(':', '-')
-    filename = f"detections_log__ID_{camera_id}__{event_id}__{group_str}__{safe_time}.json"
-    path = os.path.join(camera_folder, filename)
-
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
-        logging.info(f"✅ Evento {event_id} processado (Hora: {real_time_str})")
-        last_log_content = text
-    except Exception:
-        logging.exception(f"Erro ao salvar log: {path}")
+    if is_critical:
+        # 2. Se for CRÍTICO, MOVE da temporária para a Script_imagens
+        lockdown_path = os.path.join(OUTPUT_DIR, f"ID_{camera_id}", str(event_id))
+        os.makedirs(os.path.dirname(lockdown_path), exist_ok=True)
+        
+        if os.path.exists(lockdown_path): shutil.rmtree(lockdown_path)
+        shutil.move(work_dir, lockdown_path)
+        
+        with open(os.path.join(lockdown_path, f"alert_{event_id}.json"), "w") as f:
+            json.dump(log_data, f, indent=4)
+            
+        update_alert_stream(log_data)
+        logging.info(f"🚨 ALERTA real movido para Lockdown: Cam {camera_id}")
+    else:
+        # 3. Se for REPETIDO, deleta a pasta temporária do evento
+        shutil.rmtree(work_dir, ignore_errors=True)
+        logging.info(f"🔇 Log silencioso arquivado (imagens deletadas).")

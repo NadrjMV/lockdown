@@ -13,17 +13,18 @@ ZMPASS          = "sunshield1414"
 ZM_ADDR         = "192.168.1.39"
 DEEPSTACK_ADDR  = "localhost:5001"
 
-# Diretorios no novo volume
+# Estrutura de Pastas
 OUTPUT_DIR      = "/media/srv-sunshield/NovoVolume/Script_imagens"
-ZM_CACHE_DIR    = "/media/srv-sunshield/NovoVolume/Events_ZM" 
-ZM_LOGS_DIR     = "/media/srv-sunshield/NovoVolume/Logs_ZM"   
+LOGS_GERAIS_DIR = "/media/srv-sunshield/NovoVolume/Logs_Gerais_IA"
+ZM_CACHE_DIR    = "/media/srv-sunshield/NovoVolume/Events_ZM"
+ZM_LOGS_DIR     = "/media/srv-sunshield/NovoVolume/Logs_ZM"
 
 PROCESSED_FILE  = os.path.join(OUTPUT_DIR, "processed_events.txt")
 IA_MONITORING_FILE = "/var/www/html/ia_monitoring_cameras.json"
+IA_ALERTS_FILE = "/var/www/html/ia_alerts.json"
 
-CLEANUP_RETENTION_DAYS   = 1
-CLEANUP_INTERVAL_MINUTES = 60
-MAX_EVENT_AGE_MINUTES    = 5 # Ignora eventos com mais de 5 minutos para garantir tempo real
+CLEANUP_RETENTION_DAYS   = 6
+CLEANUP_INTERVAL_MINUTES = 30
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,28 +38,18 @@ logging.basicConfig(
 
 class JSONErrorHandler(logging.Handler):
     def emit(self, record):
-        if record.levelno < logging.ERROR:
-            return
-
+        if record.levelno < logging.ERROR: return
         date_str = time.strftime("%d-%m-%Y")
         time_str = time.strftime("%H:%M:%S")
-
-        daily_folder = os.path.join(OUTPUT_DIR, date_str)
+        daily_folder = os.path.join(LOGS_GERAIS_DIR, date_str, "ERROS")
         os.makedirs(daily_folder, exist_ok=True)
-
-        cam = getattr(record, "camera_id", "general")
-
         error_data = {
             "data_execucao": f"{date_str} {time_str}",
             "nivel": record.levelname,
-            "mensagem": record.getMessage(),
-            "traceback": record.exc_text or ""
+            "mensagem": record.getMessage()
         }
-
-        path = os.path.join(daily_folder, f"error_log_ID_{cam}_{time_str}.json")
-
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(error_data, f, indent=4)
-
-logger = logging.getLogger()
-logger.addHandler(JSONErrorHandler())
+        path = os.path.join(daily_folder, f"error_{time_str.replace(':','-')}.json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(error_data, f, indent=4)
+        except: pass

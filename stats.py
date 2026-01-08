@@ -76,4 +76,3 @@ def generate_monthly_summary(year: str, month: str):
         logging.info(f"Resumo mensal gerado em: {out_path}")
     except Exception:
         logging.exception(f"Falha ao gravar resumo mensal em: {out_path}")
-

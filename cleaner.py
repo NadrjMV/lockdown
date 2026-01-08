@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import shutil
+import subprocess
 from datetime import datetime, timedelta
 
 from config import OUTPUT_DIR, ZM_CACHE_DIR, CLEANUP_RETENTION_DAYS, JSONErrorHandler 
@@ -10,6 +11,7 @@ def run_cleanup():
     """
     Função principal da limpeza. Em "OUTPUT_DIR e ZM_CACHE_DIR"
     apaga arquivos/pastas mais antigos que o limite definido.
+    Mantém lógica de 3 níveis para garantir que o disco não encha.
     """
 
     RETENTION_DAYS = CLEANUP_RETENTION_DAYS
@@ -41,71 +43,68 @@ def run_cleanup():
                 folder_date = datetime.strptime(daily_folder_name, "%d-%m-%Y")
                 if folder_date.date() < DELETE_DATE.date():
                     logging.warning(f"🧹 Deletando pasta de log diário completa: {daily_path}")
-                    os.system(f"rm -rf \"{daily_path}\"")
-                    continue # Se deletou a pasta, vai para a próxima
+                    subprocess.run(["sudo", "rm", "-rf", daily_path], check=False)
+                    continue 
             except ValueError:
-                pass # Não é uma pasta de data (ex: 'Stats'), ignora e segue
+                pass 
 
-            # Se a pasta de data existe e é recente (não foi deletada), varre pastas ID_CAMERA DENTRO dela
-            for cam_folder_name in os.listdir(daily_path):
-                if not cam_folder_name.startswith('ID_'):
-                    continue
+            # Se a pasta de data existe e é recente, varre pastas ID_CAMERA DENTRO dela
+            if os.path.exists(daily_path):
+                for cam_folder_name in os.listdir(daily_path):
+                    if not cam_folder_name.startswith('ID_'):
+                        continue
 
-                cam_path = os.path.join(daily_path, cam_folder_name)
+                    cam_path = os.path.join(daily_path, cam_folder_name)
+                    if not os.path.isdir(cam_path): continue
 
-                # Deleta arquivos de log JSON antigos DENTRO das pastas ID_camera
-                for file_name in os.listdir(cam_path):
-                    file_path = os.path.join(cam_path, file_name)
-                    
-                    if os.path.isfile(file_path):
-                        file_mtime = os.path.getmtime(file_path)
-                        if file_mtime < DELETE_TIME_SECONDS:
+                    # Deleta arquivos de log JSON antigos DENTRO das pastas ID_camera
+                    for file_name in os.listdir(cam_path):
+                        file_path = os.path.join(cam_path, file_name)
+                        
+                        if os.path.isfile(file_path):
                             try:
-                                logging.warning(f"🧹 Deletando arquivo de log JSON: {file_path}")
-                                os.remove(file_path) # os.remove lida bem com espaços nativamente
+                                file_mtime = os.path.getmtime(file_path)
+                                if file_mtime < DELETE_TIME_SECONDS:
+                                    logging.warning(f"🧹 Deletando arquivo de log JSON: {file_path}")
+                                    os.remove(file_path)
                             except Exception:
                                 logging.exception(f"Falha ao deletar arquivo {file_path}.")
 
 
     # --- 2. Limpeza do OUTPUT_DIR: Imagens DeepStack Legado (Estrutura: ID_CAMERA/EVENTO_ID) ---
-    # Mantido para limpar estruturas antigas ou casos onde a pasta não está dentro da data
     logging.info("--> 2/3: Limpando pastas de evento (imagens DeepStack) soltas em OUTPUT_DIR.")
     
     if os.path.exists(base_dir):
         # Percorre pastas ID_CAMERA na raiz do OUTPUT_DIR
         for cam_folder_name in os.listdir(base_dir):
-            # Ignora pastas de data (DD-MM-YYYY) ou arquivos soltos
             if not cam_folder_name.startswith('ID_') or not os.path.isdir(os.path.join(base_dir, cam_folder_name)):
                 continue
                 
             cam_path = os.path.join(base_dir, cam_folder_name)
             
-            # Percorre as pastas de evento (EVENTO_ID, que contêm as imagens)
+            # Percorre as pastas de evento (EVENTO_ID)
             for event_folder_name in os.listdir(cam_path):
                 event_path = os.path.join(cam_path, event_folder_name)
                 
-                # Deletamos o diretório completo se a data de modificação for antiga
                 if os.path.isdir(event_path):
-                    folder_mtime = os.path.getmtime(event_path)
-                    
-                    if folder_mtime < DELETE_TIME_SECONDS:
-                        try:
-                            logging.warning(f"🧹 Deletando pasta de evento (imagens DeepStack): {event_path}")
-                            os.system(f"rm -rf \"{event_path}\"") 
-                        except Exception:
-                            logging.exception(f"Falha ao deletar pasta de evento {event_path}.")
+                    try:
+                        folder_mtime = os.path.getmtime(event_path)
+                        if folder_mtime < DELETE_TIME_SECONDS:
+                            logging.warning(f"🧹 Deletando pasta de evento legada: {event_path}")
+                            subprocess.run(["sudo", "rm", "-rf", event_path], check=False)
+                    except Exception:
+                        logging.exception(f"Falha ao deletar pasta de evento {event_path}.")
 
 
-    # --- 3. Limpeza do Cache do ZoneMinder (ZM_CACHE_DIR/events) ---
+    # --- 3. Limpeza do Cache do ZoneMinder (Volume Novo) ---
     logging.info("--> 3/3: Limpando o cache de eventos do ZoneMinder (Imagens originais).")
-    zm_events_base = os.path.join(ZM_CACHE_DIR, "events")
+    zm_events_base = ZM_CACHE_DIR 
 
     if not os.path.isdir(zm_events_base):
         logging.warning(f"Pasta base de eventos do ZM não encontrada: {zm_events_base}")
-        logging.info("Rotina de limpeza concluída.")
         return
 
-    # Percorre pastas ID_CAMERA (ex: /mnt/zm_store/events/3)
+    # Percorre pastas ID_CAMERA
     for cam_id_folder in os.listdir(zm_events_base):
         cam_path = os.path.join(zm_events_base, cam_id_folder)
 
@@ -116,24 +115,17 @@ def run_cleanup():
         for date_folder_name in os.listdir(cam_path):
             date_path = os.path.join(cam_path, date_folder_name)
             
-            # Valida o formato YYYY-MM-DD (usado pelo ZM)
             try:
                 folder_date = datetime.strptime(date_folder_name, "%Y-%m-%d")
+                if folder_date.date() < DELETE_DATE.date():
+                    logging.warning(f"🧹 ZM Cache: Deletando pasta antiga {date_folder_name} (Câmera {cam_id_folder}).")
+                    subprocess.run(["sudo", "rm", "-rf", date_path], check=False)
             except ValueError:
                 continue
-
-            if folder_date.date() < DELETE_DATE.date():
-                try: 
-                    # Apaga a pasta inteira da data (com todos os eventos daquele dia)
-                    logging.warning(f"🧹 ZM Cache: Deletando pasta de data antiga {date_folder_name} (Câmera {cam_id_folder}).")
-                    os.system(f"sudo rm -rf \"{date_path}\"") 
-                except Exception:
-                    logging.exception(f"ZM Cache: Falha ao deletar pasta {date_path}.")
 
     logging.info("Rotina de limpeza concluída.")
 
 if __name__ == "__main__":
-    # Garante que o handler de erro JSON esteja ativo
     logger = logging.getLogger()
     if not any(isinstance(h, JSONErrorHandler) for h in logger.handlers):
          logger.addHandler(JSONErrorHandler())
