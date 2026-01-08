@@ -4,7 +4,7 @@ import json
 import logging
 import shutil
 from config import OUTPUT_DIR, LOGS_GERAIS_DIR, PROCESSED_FILE, IA_ALERTS_FILE
-from filesystem import get_event_frames, ensure_event_folder
+from filesystem import get_event_frames
 from deepstack import analyze_with_deepstack
 from db import get_camera_groups
 import stats
@@ -42,7 +42,7 @@ def update_alert_stream(new_alert):
         json.dump(alerts, f, indent=4)
 
 def process_event(camera_id, event_date, event_id, processed_events):
-    global last_log_content, alert_cooldowns
+    global alert_cooldowns
     key = (str(camera_id), str(event_id))
     if key in processed_events: return
 
@@ -56,10 +56,8 @@ def process_event(camera_id, event_date, event_id, processed_events):
     count = 0
     objects = []
     
-    # --- Pasta de análise agora fora da estrutura de data pra dar pra enxergar ---
-    work_base = os.path.join(LOGS_GERAIS_DIR, "Analise_Temporaria")
-    work_dir = os.path.join(work_base, f"{camera_id}_{event_id}")
-    os.makedirs(work_dir, exist_ok=True) # Cria a Analise_Temporaria se não existir
+    work_dir = os.path.join(LOGS_GERAIS_DIR, "Analise_Temporaria", f"{camera_id}_{event_id}")
+    os.makedirs(work_dir, exist_ok=True)
 
     for frame in sampled:
         detected, objs = analyze_with_deepstack(frame, camera_id, work_dir)
@@ -73,7 +71,6 @@ def process_event(camera_id, event_date, event_id, processed_events):
         save_processed(processed_events)
         return
 
-    # Lógica de Cooldown
     current_time = time.time()
     primary_label = objects[0].split(' ')[0] if objects else "person"
     alert_key = f"{camera_id}_{primary_label}"
@@ -86,27 +83,40 @@ def process_event(camera_id, event_date, event_id, processed_events):
     save_processed(processed_events)
     stats.increment_with_detections(event_date)
 
-    # Dados do Log
     date_str = time.strftime("%d-%m-%Y")
     time_str = time.strftime("%H:%M:%S")
+    groups = get_camera_groups(camera_id)
+    main_group = groups[0] if groups else 10
+
     log_data = {
         "data_execucao": f"{date_str} {time_str}",
         "camera": camera_id,
         "evento": event_id,
         "is_critical": is_critical,
+        "grupo": groups,
         "resultado": f"{count} detecções.",
         "objetos_detectados": list(set(objects))
     }
 
-    # --- SALVAMENTO ---
-    # 1. Salva o JSON no histórico (Logs_Gerais_IA/DATA/ID_CAM)
+    # 1. HISTÓRICO COMPLETO (Logs_Gerais_IA)
     geral_path = os.path.join(LOGS_GERAIS_DIR, date_str, f"ID_{camera_id}")
     os.makedirs(geral_path, exist_ok=True)
     with open(os.path.join(geral_path, f"log_{event_id}.json"), "w") as f:
         json.dump(log_data, f, indent=4)
 
     if is_critical:
-        # 2. Se for CRÍTICO, MOVE da temporária para a Script_imagens
+        # 2. LOG DE EVENTO REAL (Nomenclatura idêntica à imagem)
+        real_log_folder = os.path.join(OUTPUT_DIR, date_str, f"ID_{camera_id}")
+        os.makedirs(real_log_folder, exist_ok=True)
+        
+        # Padrão da imagem: detections_log__ID_156__252266__11__11:22:27.json
+        file_name = f"detections_log__ID_{camera_id}__{event_id}__{main_group}__{time_str}.json"
+        real_log_path = os.path.join(real_log_folder, file_name)
+        
+        with open(real_log_path, "w") as f:
+            json.dump(log_data, f, indent=4)
+
+        # 3. IMAGENS DO EVENTO (Pasta Fixa)
         lockdown_path = os.path.join(OUTPUT_DIR, f"ID_{camera_id}", str(event_id))
         os.makedirs(os.path.dirname(lockdown_path), exist_ok=True)
         
@@ -117,8 +127,7 @@ def process_event(camera_id, event_date, event_id, processed_events):
             json.dump(log_data, f, indent=4)
             
         update_alert_stream(log_data)
-        logging.info(f"🚨 ALERTA real movido para Lockdown: Cam {camera_id}")
+        logging.info(f"🚨 ALERTA REAL: {file_name}")
     else:
-        # 3. Se for REPETIDO, deleta a pasta temporária do evento
         shutil.rmtree(work_dir, ignore_errors=True)
-        logging.info(f"🔇 Log silencioso arquivado (imagens deletadas).")
+        logging.info(f"🔇 Log silencioso arquivado.")
