@@ -48,14 +48,14 @@ class Event(BaseModel):
 # --- Funções Auxiliares ---
 
 def find_event_log_files(log_dir: str):
-    """Busca logs no padrão detections_{camera}_{evento}_{horario}.json"""
+    """Busca logs no padrão da imagem: detections_log__ID_..."""
     events = []
     if not os.path.isdir(log_dir):
         return events
 
     for filename in os.listdir(log_dir):
-        # Prefixo corrigido para 'detections_' conforme padrão real
-        if filename.startswith("detections_") and filename.endswith(".json"):
+        # Captura o padrão exato com os underscores da imagem
+        if filename.startswith("detections_log__ID_") and filename.endswith(".json"):
             filepath = os.path.join(log_dir, filename)
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
@@ -64,7 +64,7 @@ def find_event_log_files(log_dir: str):
                     data['path_evento'] = os.path.join(f"ID_{data['camera']}", str(data['evento']))
                     events.append(data)
             except Exception as e:
-                log.error(f"Erro no log {filename}: {e}")
+                log.error(f"Erro ao ler log {filename}: {e}")
     return events
 
 # --- Endpoints da API ---
