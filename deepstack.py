@@ -57,15 +57,22 @@ def analyze_with_deepstack(image_path, zmmoid, event_folder, retries=3, delay=2)
         if not full_saved:
             full_filename = f"{PREFIX}_{zmmoid}_{ts}_frame.jpg"
             full_path = os.path.join(event_folder, full_filename)
+            
+            # Nome fixo pra facilitar o carregamento no dashboard
+            preview_path = os.path.join(event_folder, "preview.jpg")
+            
             try:
                 shutil.copy(image_path, full_path)
+                # Cria a cópia com nome fixo pro preview
+                shutil.copy(image_path, preview_path)
                 
                 # --- CORREÇÃO DE PERMISSÃO (Subprocess) ---
                 subprocess.run(["sudo", "chown", "www-data:www-data", full_path], check=False)
+                subprocess.run(["sudo", "chown", "www-data:www-data", preview_path], check=False)
                 
-                logging.info(f"🖼 Frame inteiro salvo: {full_path}")
+                logging.info(f"📸 Frame inteiro e preview salvos em: {event_folder}")
             except Exception:
-                logging.exception(f"Erro ao salvar o frame inteiro {full_path}")
+                logging.exception(f"Erro ao salvar o frame inteiro ou preview em {event_folder}")
             full_saved = True
 
         confidence = obj.get("confidence", 0) * 100

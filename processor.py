@@ -123,8 +123,9 @@ def process_event(camera_id, event_date, event_id, processed_events):
         if os.path.exists(lockdown_path): shutil.rmtree(lockdown_path)
         shutil.move(work_dir, lockdown_path)
         
-        with open(os.path.join(lockdown_path, f"alert_{event_id}.json"), "w") as f:
-            json.dump(log_data, f, indent=4)
+        # Comentei pra parar de gerar o arquivo alert_{id}.log
+        # with open(os.path.join(lockdown_path, f"alert_{event_id}.json"), "w") as f:
+        #     json.dump(log_data, f, indent=4)
             
         update_alert_stream(log_data)
         logging.info(f"🚨 ALERTA REAL: {file_name}")
